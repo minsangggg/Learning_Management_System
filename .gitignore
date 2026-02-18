@@ -1,0 +1,16 @@
+# Node
+node_modules/
+frontend/dist/
+
+# Java
+backend/target/
+*.log
+backend-run.err
+
+# Env
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db

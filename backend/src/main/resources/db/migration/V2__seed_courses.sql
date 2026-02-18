@@ -1,0 +1,89 @@
+MERGE INTO COURSES c
+USING (SELECT 'Practical Java Fundamentals' AS TITLE, 'Core Java syntax, OOP, and tooling for backend development.' AS DESCRIPTION FROM dual) src
+ON (c.TITLE = src.TITLE)
+WHEN NOT MATCHED THEN
+  INSERT (TITLE, DESCRIPTION) VALUES (src.TITLE, src.DESCRIPTION);
+
+MERGE INTO COURSES c
+USING (SELECT 'Spring Boot API Essentials' AS TITLE, 'Build REST APIs with Spring Boot, validation, and error handling.' AS DESCRIPTION FROM dual) src
+ON (c.TITLE = src.TITLE)
+WHEN NOT MATCHED THEN
+  INSERT (TITLE, DESCRIPTION) VALUES (src.TITLE, src.DESCRIPTION);
+
+MERGE INTO COURSES c
+USING (SELECT 'Database Modeling with Oracle' AS TITLE, 'Design tables, indexes, and SQL for reporting.' AS DESCRIPTION FROM dual) src
+ON (c.TITLE = src.TITLE)
+WHEN NOT MATCHED THEN
+  INSERT (TITLE, DESCRIPTION) VALUES (src.TITLE, src.DESCRIPTION);
+
+MERGE INTO COURSES c
+USING (SELECT 'Frontend Basics for LMS' AS TITLE, 'React + TypeScript flow for learner/admin screens.' AS DESCRIPTION FROM dual) src
+ON (c.TITLE = src.TITLE)
+WHEN NOT MATCHED THEN
+  INSERT (TITLE, DESCRIPTION) VALUES (src.TITLE, src.DESCRIPTION);
+
+MERGE INTO LESSONS l
+USING (
+  SELECT c.ID AS COURSE_ID, 1 AS ORDER_NO, 'Getting Started' AS TITLE, 'Environment setup and project structure.' AS CONTENT
+  FROM COURSES c
+  WHERE c.TITLE = 'Practical Java Fundamentals'
+) src
+ON (l.COURSE_ID = src.COURSE_ID AND l.ORDER_NO = src.ORDER_NO)
+WHEN NOT MATCHED THEN
+  INSERT (COURSE_ID, TITLE, CONTENT, ORDER_NO)
+  VALUES (src.COURSE_ID, src.TITLE, src.CONTENT, src.ORDER_NO);
+
+MERGE INTO LESSONS l
+USING (
+  SELECT c.ID AS COURSE_ID, 2 AS ORDER_NO, 'Classes and Interfaces' AS TITLE, 'Core OOP concepts with exercises.' AS CONTENT
+  FROM COURSES c
+  WHERE c.TITLE = 'Practical Java Fundamentals'
+) src
+ON (l.COURSE_ID = src.COURSE_ID AND l.ORDER_NO = src.ORDER_NO)
+WHEN NOT MATCHED THEN
+  INSERT (COURSE_ID, TITLE, CONTENT, ORDER_NO)
+  VALUES (src.COURSE_ID, src.TITLE, src.CONTENT, src.ORDER_NO);
+
+MERGE INTO LESSONS l
+USING (
+  SELECT c.ID AS COURSE_ID, 1 AS ORDER_NO, 'REST Controllers' AS TITLE, 'Request/response flow with DTOs.' AS CONTENT
+  FROM COURSES c
+  WHERE c.TITLE = 'Spring Boot API Essentials'
+) src
+ON (l.COURSE_ID = src.COURSE_ID AND l.ORDER_NO = src.ORDER_NO)
+WHEN NOT MATCHED THEN
+  INSERT (COURSE_ID, TITLE, CONTENT, ORDER_NO)
+  VALUES (src.COURSE_ID, src.TITLE, src.CONTENT, src.ORDER_NO);
+
+MERGE INTO LESSONS l
+USING (
+  SELECT c.ID AS COURSE_ID, 2 AS ORDER_NO, 'Validation and Errors' AS TITLE, 'Input validation and error responses.' AS CONTENT
+  FROM COURSES c
+  WHERE c.TITLE = 'Spring Boot API Essentials'
+) src
+ON (l.COURSE_ID = src.COURSE_ID AND l.ORDER_NO = src.ORDER_NO)
+WHEN NOT MATCHED THEN
+  INSERT (COURSE_ID, TITLE, CONTENT, ORDER_NO)
+  VALUES (src.COURSE_ID, src.TITLE, src.CONTENT, src.ORDER_NO);
+
+MERGE INTO LESSONS l
+USING (
+  SELECT c.ID AS COURSE_ID, 1 AS ORDER_NO, 'Schema Design' AS TITLE, 'Tables, constraints, and indexing strategy.' AS CONTENT
+  FROM COURSES c
+  WHERE c.TITLE = 'Database Modeling with Oracle'
+) src
+ON (l.COURSE_ID = src.COURSE_ID AND l.ORDER_NO = src.ORDER_NO)
+WHEN NOT MATCHED THEN
+  INSERT (COURSE_ID, TITLE, CONTENT, ORDER_NO)
+  VALUES (src.COURSE_ID, src.TITLE, src.CONTENT, src.ORDER_NO);
+
+MERGE INTO LESSONS l
+USING (
+  SELECT c.ID AS COURSE_ID, 1 AS ORDER_NO, 'Routing and Layout' AS TITLE, 'Landing, course list, and detail pages.' AS CONTENT
+  FROM COURSES c
+  WHERE c.TITLE = 'Frontend Basics for LMS'
+) src
+ON (l.COURSE_ID = src.COURSE_ID AND l.ORDER_NO = src.ORDER_NO)
+WHEN NOT MATCHED THEN
+  INSERT (COURSE_ID, TITLE, CONTENT, ORDER_NO)
+  VALUES (src.COURSE_ID, src.TITLE, src.CONTENT, src.ORDER_NO);

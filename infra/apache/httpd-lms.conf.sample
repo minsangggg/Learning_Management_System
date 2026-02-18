@@ -1,0 +1,23 @@
+## Apache reverse proxy (sample)
+
+## Usage
+- Place this in your Apache conf as a vhost include.
+- Update ServerName and paths as needed.
+- Ensure modules are enabled: proxy, proxy_http, headers
+
+## Example (not applied)
+<VirtualHost *:80>
+  ServerName lms.local
+
+  ProxyPreserveHost On
+
+  # Backend (Tomcat)
+  ProxyPass /api http://localhost:8080/lms-backend-0.1.0-SNAPSHOT/api
+  ProxyPassReverse /api http://localhost:8080/lms-backend-0.1.0-SNAPSHOT/api
+
+  # Frontend (Vite dev server)
+  ProxyPass / http://localhost:5173/
+  ProxyPassReverse / http://localhost:5173/
+
+  RequestHeader set X-Forwarded-Proto "http"
+</VirtualHost>
