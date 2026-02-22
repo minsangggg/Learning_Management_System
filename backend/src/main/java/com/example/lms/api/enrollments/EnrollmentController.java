@@ -2,15 +2,20 @@ package com.example.lms.api.enrollments;
 
 import com.example.lms.api.enrollments.EnrollmentDtos.EnrollRequest;
 import com.example.lms.api.enrollments.EnrollmentDtos.EnrollmentResponse;
+import com.example.lms.api.enrollments.EnrollmentDtos.PendingEnrollmentResponse;
 import com.example.lms.api.error.ApiException;
 import com.example.lms.api.error.ErrorCode;
 import com.example.lms.api.security.AuthContext;
 import com.example.lms.api.security.AuthUtil;
+import java.util.List;
 import java.util.Optional;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -36,6 +41,42 @@ public class EnrollmentController {
     return toResponse(repository.findById(id));
   }
 
+  @GetMapping
+  public EnrollmentResponse getEnrollment(
+      @RequestParam("courseId") long courseId,
+      @RequestHeader("X-User-Id") Optional<String> userIdHeader,
+      @RequestHeader("X-Role") Optional<String> roleHeader) {
+    AuthContext ctx = AuthUtil.requireAuth(userIdHeader, roleHeader);
+    AuthUtil.requireLearner(ctx);
+    if (courseId <= 0) {
+      throw new ApiException(ErrorCode.VALIDATION_ERROR, "CourseId is required");
+    }
+    return repository
+        .findByUserAndCourse(ctx.userId(), courseId)
+        .map(this::toResponse)
+        .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "Enrollment not found"));
+  }
+
+  @GetMapping("/pending")
+  public List<PendingEnrollmentResponse> listPending(
+      @RequestHeader("X-User-Id") Optional<String> userIdHeader,
+      @RequestHeader("X-Role") Optional<String> roleHeader) {
+    AuthContext ctx = AuthUtil.requireAuth(userIdHeader, roleHeader);
+    AuthUtil.requireAdmin(ctx);
+    return repository.findPending().stream().map(this::toPendingResponse).toList();
+  }
+
+  @PostMapping("/{id}/approve")
+  public EnrollmentResponse approve(
+      @PathVariable("id") long id,
+      @RequestHeader("X-User-Id") Optional<String> userIdHeader,
+      @RequestHeader("X-Role") Optional<String> roleHeader) {
+    AuthContext ctx = AuthUtil.requireAuth(userIdHeader, roleHeader);
+    AuthUtil.requireAdmin(ctx);
+    repository.updateStatus(id, "APPROVED");
+    return toResponse(repository.findById(id));
+  }
+
   private EnrollmentResponse toResponse(EnrollmentEntity entity) {
     return new EnrollmentResponse(
         entity.id(),
@@ -43,5 +84,17 @@ public class EnrollmentController {
         entity.courseId(),
         entity.status(),
         entity.enrolledAt().toString());
+  }
+
+  private PendingEnrollmentResponse toPendingResponse(PendingEnrollmentRow row) {
+    return new PendingEnrollmentResponse(
+        row.id(),
+        row.userId(),
+        row.userEmail(),
+        row.userName(),
+        row.courseId(),
+        row.courseTitle(),
+        row.status(),
+        row.enrolledAt().toString());
   }
 }

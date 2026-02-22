@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import { getUserId } from "../auth";
@@ -17,6 +17,8 @@ type Lesson = {
   content: string | null;
   orderNo: number;
   videoUrl: string | null;
+  startSec?: number | null;
+  endSec?: number | null;
 };
 
 type Enrollment = {
@@ -33,7 +35,15 @@ type Progress = {
   lessonId: number;
   progressPercent: number;
   completedAt: string | null;
+  lastPositionSec?: number | null;
 };
+
+declare global {
+  interface Window {
+    YT?: any;
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
 
 export default function LearnerCourseDetail() {
   const { id } = useParams();
@@ -44,7 +54,15 @@ export default function LearnerCourseDetail() {
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [progressRows, setProgressRows] = useState<Progress[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showEnrollCard, setShowEnrollCard] = useState(false);
   const loggedIn = Boolean(getUserId());
+  const playerRef = useRef<any>(null);
+  const playerReadyRef = useRef(false);
+  const saveTimerRef = useRef<number | null>(null);
+  const activeLessonRef = useRef<Lesson | null>(null);
+  const lastSavedPositionRef = useRef<number | null>(null);
+  const resumeAppliedRef = useRef(false);
+  const pendingResumeRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!courseId) {
@@ -61,17 +79,17 @@ export default function LearnerCourseDetail() {
       .catch(() => {});
   }, [courseId]);
 
-  const toEmbedUrl = (url: string) => {
+  const getVideoId = (url: string) => {
     try {
       const parsed = new URL(url);
       if (parsed.hostname.includes("youtu.be")) {
         const videoId = parsed.pathname.replace("/", "");
-        return `https://www.youtube.com/embed/${videoId}`;
+        return videoId;
       }
       if (parsed.hostname.includes("youtube.com")) {
         const videoId = parsed.searchParams.get("v");
         if (videoId) {
-          return `https://www.youtube.com/embed/${videoId}`;
+          return videoId;
         }
       }
     } catch {
@@ -80,13 +98,76 @@ export default function LearnerCourseDetail() {
     return "";
   };
 
+  const clampPosition = (lesson: Lesson, position: number) => {
+    let result = position;
+    if (typeof lesson.startSec === "number") {
+      result = Math.max(result, lesson.startSec);
+    }
+    if (typeof lesson.endSec === "number") {
+      result = Math.min(result, lesson.endSec);
+    }
+    return result;
+  };
+
+  const getResumeSeconds = (lesson: Lesson, rows: Progress[] = progressRows) => {
+    const row = rows.find((progress) => progress.lessonId === lesson.id);
+    const fallback = typeof lesson.startSec === "number" ? lesson.startSec : 0;
+    if (!row || row.lastPositionSec == null) {
+      return fallback;
+    }
+    const resume = clampPosition(lesson, row.lastPositionSec);
+    if (typeof lesson.endSec === "number" && resume >= lesson.endSec) {
+      return Math.max(fallback, lesson.endSec - 1);
+    }
+    return resume;
+  };
+
   const handlePlay = (lesson: Lesson) => {
+    if (!loggedIn) {
+      setError("로그인 후 재생할 수 있습니다.");
+      return;
+    }
+    if (!enrollment) {
+      setError("수강 신청 후 재생할 수 있습니다.");
+      return;
+    }
+    if (!isApprovedEnrollment(enrollment)) {
+      setError("관리자 승인 대기 중입니다.");
+      return;
+    }
     setSelectedLessonId(lesson.id);
     void recordProgress(1, lesson.id);
   };
 
   const selectedLesson =
     selectedLessonId == null ? null : lessons.find((lesson) => lesson.id === selectedLessonId) || null;
+  const completedLessonIds = new Set(
+    progressRows
+      .filter((row) => row.progressPercent >= 100 || row.completedAt)
+      .map((row) => row.lessonId)
+  );
+  const isApprovedEnrollment = (current: Enrollment | null) => {
+    if (!current) {
+      return false;
+    }
+    return current.status?.toUpperCase() !== "PENDING";
+  };
+  const canPlay = isApprovedEnrollment(enrollment);
+  const playerMessage = () => {
+    if (!selectedLesson) {
+      return "재생할 레슨을 선택하세요.";
+    }
+    if (!loggedIn) {
+      return "로그인 후 재생할 수 있습니다.";
+    }
+    if (!enrollment) {
+      return "수강 신청 후 재생할 수 있습니다.";
+    }
+    if (!canPlay) {
+      return "관리자 승인 대기 중입니다.";
+    }
+    return "재생할 레슨을 선택하세요.";
+  };
 
   const enroll = async () => {
     if (!loggedIn) {
@@ -99,20 +180,39 @@ export default function LearnerCourseDetail() {
         body: JSON.stringify({ courseId }),
       });
       setEnrollment(data);
+      setShowEnrollCard(true);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
     }
   };
 
-  const loadProgress = async (enrollmentId: number) => {
+  const fetchProgress = async (enrollmentId: number) => {
     const rows = await apiRequest<Progress[]>(
       `/api/progress?enrollmentId=${enrollmentId}`
     );
     setProgressRows(rows);
+    return rows;
   };
 
-  const recordProgress = async (progressValue: number, lessonId?: number | null) => {
+  useEffect(() => {
+    if (!courseId || !loggedIn) {
+      return;
+    }
+    apiRequest<Enrollment>(`/api/enroll?courseId=${courseId}`)
+      .then((data) => {
+        setEnrollment(data);
+        void fetchProgress(data.id);
+      })
+      .catch(() => {});
+  }, [courseId, loggedIn]);
+
+  const recordProgress = async (
+    progressValue: number,
+    lessonId?: number | null,
+    lastPositionSec?: number | null,
+    shouldReload = true
+  ) => {
     if (!enrollment) {
       setError("수강 신청 후 재생하면 진도가 기록됩니다.");
       return;
@@ -127,7 +227,7 @@ export default function LearnerCourseDetail() {
       return;
     }
     const existingProgress = progressRows.find((row) => row.lessonId === lessonIdToUse);
-    if (existingProgress && existingProgress.progressPercent >= progressValue) {
+    if (existingProgress && existingProgress.progressPercent >= progressValue && lastPositionSec == null) {
       return;
     }
     try {
@@ -137,10 +237,13 @@ export default function LearnerCourseDetail() {
           enrollmentId: enrollment.id,
           lessonId: lessonIdToUse,
           progressPercent: progressValue,
+          lastPositionSec: lastPositionSec ?? null,
         }),
       });
       setError(null);
-      await loadProgress(enrollment.id);
+      if (shouldReload) {
+        await fetchProgress(enrollment.id);
+      }
       setProgressRows((prev) => {
         const existing = prev.find((row) => row.id === data.id);
         if (existing) {
@@ -153,6 +256,227 @@ export default function LearnerCourseDetail() {
     }
   };
 
+  const PLAYER_STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2 };
+
+  const stopSaveTimer = () => {
+    if (saveTimerRef.current != null) {
+      window.clearInterval(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+  };
+
+  const saveLastPosition = async (lesson: Lesson, position: number, force = false) => {
+    if (!loggedIn || !enrollment) {
+      return;
+    }
+    const normalized = Math.max(0, Math.floor(clampPosition(lesson, position)));
+    if (!force && lastSavedPositionRef.current != null) {
+      if (Math.abs(normalized - lastSavedPositionRef.current) < 5) {
+        return;
+      }
+    }
+    lastSavedPositionRef.current = normalized;
+    const existing = progressRows.find((row) => row.lessonId === lesson.id);
+    const progressValue = existing ? existing.progressPercent : 1;
+    await recordProgress(progressValue, lesson.id, normalized, false);
+  };
+
+  const persistCurrentPosition = () => {
+    const lesson = activeLessonRef.current;
+    if (!lesson || !playerRef.current) {
+      return;
+    }
+    const currentTime = playerRef.current.getCurrentTime?.();
+    if (typeof currentTime === "number") {
+      void saveLastPosition(lesson, currentTime, true);
+    }
+  };
+
+  const handlePlayerState = (event: { data: number }) => {
+    const lesson = activeLessonRef.current;
+    if (!lesson || !playerRef.current) {
+      return;
+    }
+    if (event.data === PLAYER_STATE.PLAYING) {
+      if (saveTimerRef.current == null) {
+        saveTimerRef.current = window.setInterval(() => {
+          const currentLesson = activeLessonRef.current;
+          if (!currentLesson || !playerRef.current) {
+            return;
+          }
+          const currentTime = playerRef.current.getCurrentTime?.();
+          if (typeof currentTime === "number") {
+            void saveLastPosition(currentLesson, currentTime);
+          }
+        }, 10000);
+      }
+      return;
+    }
+    if (event.data === PLAYER_STATE.PAUSED) {
+      const currentTime = playerRef.current.getCurrentTime?.();
+      if (typeof currentTime === "number") {
+        void saveLastPosition(lesson, currentTime, true);
+      }
+      stopSaveTimer();
+      return;
+    }
+    if (event.data === PLAYER_STATE.ENDED) {
+      const currentTime = playerRef.current.getCurrentTime?.();
+      if (typeof currentTime === "number") {
+        void saveLastPosition(lesson, currentTime, true);
+      }
+      stopSaveTimer();
+      void recordProgress(100, lesson.id, currentTime ?? null);
+    }
+  };
+
+  const loadLessonIntoPlayer = (lesson: Lesson) => {
+    if (!lesson.videoUrl) {
+      return;
+    }
+    const videoId = getVideoId(lesson.videoUrl);
+    if (!videoId) {
+      return;
+    }
+    const pendingResume = pendingResumeRef.current;
+    const defaultStart = Math.max(0, Math.floor(getResumeSeconds(lesson)));
+    const startSeconds =
+      typeof pendingResume === "number" && pendingResume > 0 ? pendingResume : defaultStart;
+    const endSeconds =
+      typeof lesson.endSec === "number" ? Math.max(0, Math.floor(lesson.endSec)) : undefined;
+
+    const init = () => {
+      stopSaveTimer();
+      playerReadyRef.current = false;
+      if (!playerRef.current) {
+        playerRef.current = new window.YT.Player("lesson-player", {
+          videoId,
+          playerVars: {
+            start: startSeconds,
+            end: endSeconds,
+            rel: 0,
+            modestbranding: 1,
+          },
+          events: {
+            onReady: () => {
+              if (!playerRef.current) {
+                return;
+              }
+              playerReadyRef.current = true;
+              if (pendingResumeRef.current != null) {
+                const resumeSeconds = pendingResumeRef.current;
+                pendingResumeRef.current = null;
+                playerRef.current.seekTo?.(resumeSeconds, true);
+                playerRef.current.playVideo?.();
+                resumeAppliedRef.current = true;
+                return;
+              }
+            },
+            onStateChange: handlePlayerState,
+          },
+        });
+      } else {
+        playerRef.current.loadVideoById({ videoId, startSeconds, endSeconds });
+        playerReadyRef.current = true;
+        if (pendingResumeRef.current != null) {
+          const resumeSeconds = pendingResumeRef.current;
+          pendingResumeRef.current = null;
+          playerRef.current.seekTo?.(resumeSeconds, true);
+          playerRef.current.playVideo?.();
+          resumeAppliedRef.current = true;
+        }
+      }
+      if (pendingResumeRef.current != null && startSeconds > 0) {
+        pendingResumeRef.current = null;
+        resumeAppliedRef.current = true;
+      } else {
+        resumeAppliedRef.current = startSeconds > 0;
+      }
+    };
+
+    if (window.YT && window.YT.Player) {
+      init();
+      return;
+    }
+
+    const previous = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (previous) {
+        previous();
+      }
+      init();
+    };
+  };
+
+  useEffect(() => {
+    activeLessonRef.current = selectedLesson;
+  }, [selectedLesson]);
+
+  useEffect(() => {
+    resumeAppliedRef.current = false;
+    lastSavedPositionRef.current = null;
+    playerReadyRef.current = false;
+    stopSaveTimer();
+  }, [selectedLessonId]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    if (document.getElementById("youtube-iframe-api")) {
+      return;
+    }
+    const tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    tag.id = "youtube-iframe-api";
+    document.body.appendChild(tag);
+  }, []);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        persistCurrentPosition();
+      }
+    };
+    const handlePageHide = () => {
+      persistCurrentPosition();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [loggedIn, enrollment]);
+
+  useEffect(() => {
+    if (!selectedLesson || !selectedLesson.videoUrl) {
+      return;
+    }
+    loadLessonIntoPlayer(selectedLesson);
+  }, [selectedLessonId]);
+
+  useEffect(() => {
+    if (!selectedLesson || !playerRef.current) {
+      return;
+    }
+    if (resumeAppliedRef.current) {
+      return;
+    }
+    const resumeSeconds = getResumeSeconds(selectedLesson);
+    if (resumeSeconds <= 0) {
+      return;
+    }
+    const currentTime = playerRef.current.getCurrentTime?.();
+    if (typeof currentTime === "number" && currentTime > 1) {
+      return;
+    }
+    playerRef.current.seekTo?.(resumeSeconds, true);
+    resumeAppliedRef.current = true;
+  }, [progressRows, selectedLessonId]);
+
+  useEffect(() => () => stopSaveTimer(), []);
+
   return (
     <main className="page">
       <div className="page-header">
@@ -162,24 +486,27 @@ export default function LearnerCourseDetail() {
       {error && <p className="error">{error}</p>}
       {course && (
         <section className="card">
-          <h2>{course.title}</h2>
-          <p>{course.description}</p>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "1.5rem" }}>
+            <div>
+              <h2>{course.title}</h2>
+              <p>{course.description}</p>
+            </div>
+            <div>
+              <button className="btn btn-primary" onClick={enroll}>
+                수강 신청
+              </button>
+            </div>
+          </div>
         </section>
       )}
       <section className="card section">
         <h3>강의 재생</h3>
         <div className="player">
-          {selectedLesson && selectedLesson.videoUrl ? (
-            <iframe
-              className="player-frame"
-              src={`${toEmbedUrl(selectedLesson.videoUrl)}?autoplay=0`}
-              title={selectedLesson.title}
-              allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
+          {selectedLesson && selectedLesson.videoUrl && canPlay ? (
+            <div id="lesson-player" className="player-frame" />
           ) : (
             <div className="player-screen">
-              <span>재생할 레슨을 선택하세요.</span>
+              <span>{playerMessage()}</span>
             </div>
           )}
           <div className="player-meta">
@@ -189,6 +516,7 @@ export default function LearnerCourseDetail() {
             <button
               className="btn"
               type="button"
+              disabled={!canPlay}
               onClick={() => {
                 if (!lessons.length) {
                   return;
@@ -206,11 +534,60 @@ export default function LearnerCourseDetail() {
               다음 레슨
             </button>
             <button
-              className="btn btn-primary"
+              className="btn btn-secondary"
               type="button"
-              onClick={() => recordProgress(100, selectedLessonId)}
+              disabled={!selectedLesson || !canPlay}
+              onClick={async () => {
+                if (!selectedLesson || !playerRef.current) {
+                  if (selectedLesson) {
+                    if (!enrollment) {
+                      setError("수강 신청 후 이어보기가 가능합니다.");
+                      return;
+                    }
+                    let rows: Progress[] = [];
+                    try {
+                      rows = await fetchProgress(enrollment.id);
+                    } catch (err) {
+                      setError((err as Error).message);
+                      return;
+                    }
+                    const resumeSeconds = getResumeSeconds(selectedLesson, rows);
+                    if (resumeSeconds > 0) {
+                      pendingResumeRef.current = resumeSeconds;
+                      loadLessonIntoPlayer(selectedLesson);
+                      return;
+                    }
+                    setError("저장된 시점이 없습니다.");
+                  }
+                  return;
+                }
+                if (!enrollment) {
+                  setError("수강 신청 후 이어보기가 가능합니다.");
+                  return;
+                }
+                let rows: Progress[] = [];
+                try {
+                  rows = await fetchProgress(enrollment.id);
+                } catch (err) {
+                  setError((err as Error).message);
+                  return;
+                }
+                const resumeSeconds = getResumeSeconds(selectedLesson, rows);
+                if (resumeSeconds <= 0) {
+                  setError("저장된 시점이 없습니다.");
+                  return;
+                }
+                if (!playerReadyRef.current) {
+                  pendingResumeRef.current = resumeSeconds;
+                  loadLessonIntoPlayer(selectedLesson);
+                  return;
+                }
+                playerRef.current.seekTo?.(resumeSeconds, true);
+                playerRef.current.playVideo?.();
+                resumeAppliedRef.current = true;
+              }}
             >
-              완료 처리
+              이어보기
             </button>
           </div>
         </div>
@@ -222,11 +599,13 @@ export default function LearnerCourseDetail() {
             <li key={lesson.id}>
               <strong>
                 {lesson.orderNo}. {lesson.title}
+                {completedLessonIds.has(lesson.id) ? " (완료)" : ""}
               </strong>
               <p className="muted">{lesson.content ?? "설명은 준비 중입니다."}</p>
               <button
                 className="btn btn-secondary btn-sm"
                 type="button"
+                disabled={!canPlay}
                 onClick={() => handlePlay(lesson)}
               >
                 재생
@@ -237,19 +616,23 @@ export default function LearnerCourseDetail() {
       </section>
       <section className="card section">
         <div className="form-actions">
-          <button className="btn btn-primary" onClick={enroll}>
-            수강 신청
-          </button>
           {enrollment && (
-            <button className="btn" onClick={() => loadProgress(enrollment.id)}>
+            <button className="btn" onClick={() => fetchProgress(enrollment.id)}>
               진도 불러오기
             </button>
           )}
         </div>
-        {enrollment && (
-          <p className="muted">
-            Enrollment ID: {enrollment.id} ({enrollment.status})
-          </p>
+        {showEnrollCard && (
+          <div className="card">
+            <p>수강 신청이 완료되었습니다.</p>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={() => setShowEnrollCard(false)}
+            >
+              닫기
+            </button>
+          </div>
         )}
       </section>
       <section className="card section">
@@ -276,4 +659,5 @@ export default function LearnerCourseDetail() {
     </main>
   );
 }
+
 

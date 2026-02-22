@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+﻿import { Link, useLocation, useNavigate } from "react-router-dom";
 import { clearAuth, getName, getRole, getUserId } from "../auth";
 
 type NavProps = {
@@ -14,7 +14,7 @@ export default function Nav({ onLogin }: NavProps) {
   const displayName = name && name.trim() ? name.trim() : userId ? `User ${userId}` : "";
   const displayLabel = userId
     ? [displayName, role || ""].filter(Boolean).join(" \u00b7 ")
-    : "\uB85C\uADF8\uC778 \uD544\uC694";
+    : "";
   const isLanding = location.pathname === "/";
 
   return (
@@ -26,30 +26,30 @@ export default function Nav({ onLogin }: NavProps) {
         <nav className="header-nav">
           {isLanding ? (
             <>
-              <a href="#intro">소개</a>
-              <a href="#packages">패키지</a>
-              <a href="#samples">샘플</a>
-              <a href="#contact">문의</a>
-              <Link to="/board">게시판</Link>
+              <a href="#intro">?뚭컻</a>
+              <a href="#packages">?⑦궎吏</a>
+              <a href="#samples">?섑뵆</a>
+              <a href="#contact">臾몄쓽</a>
+              <Link to="/board">寃뚯떆??</Link>
             </>
           ) : (
             <>
               {role === "LEARNER" && (
                 <>
-                  <Link to="/learner/courses">학습 과정</Link>
+                  <Link to="/learner/courses">?숈뒿 怨쇱젙</Link>
                 </>
               )}
               {role === "ADMIN" && (
                 <>
-                  <Link to="/admin/courses">과정 관리</Link>
-                  <Link to="/admin/reports">리포트</Link>
+                  <Link to="/admin/courses">怨쇱젙 愿由?</Link>
+                  <Link to="/admin/reports">由ы룷??</Link>
                 </>
               )}
             </>
           )}
         </nav>
-        <div className="header-actions">
-          <span className="user-pill">{displayLabel}</span>
+                <div className="header-actions">
+          {userId ? <span className="user-pill">{displayLabel}</span> : null}
           {userId ? (
             <button
               className="btn"
@@ -58,15 +58,31 @@ export default function Nav({ onLogin }: NavProps) {
                 navigate("/");
               }}
             >
-              로그아웃
+              濡쒓렇?꾩썐
             </button>
           ) : (
             <button className="btn" onClick={onLogin}>
-              로그인
+              濡쒓렇??
             </button>
           )}
+          {userId && role === "ADMIN" ? (
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={() => {
+                window.open("/admin/my-page", "_blank", "noopener,noreferrer");
+              }}
+            >
+              마이페이지
+            </button>
+          ) : null}
         </div>
       </div>
     </header>
   );
 }
+
+
+
+
+

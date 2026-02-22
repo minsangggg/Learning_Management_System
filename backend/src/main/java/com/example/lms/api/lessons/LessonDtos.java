@@ -7,7 +7,9 @@ public class LessonDtos {
       String title,
       String content,
       int orderNo,
-      String videoUrl) {}
+      String videoUrl,
+      Integer startSec,
+      Integer endSec) {}
   public record WatchedLessonResponse(
       long lessonId,
       long courseId,

@@ -6,7 +6,12 @@ public class ProgressDtos {
       long enrollmentId,
       long lessonId,
       double progressPercent,
-      String completedAt) {}
+      String completedAt,
+      Double lastPositionSec) {}
 
-  public record ProgressUpdateRequest(long enrollmentId, long lessonId, double progressPercent) {}
+  public record ProgressUpdateRequest(
+      long enrollmentId,
+      long lessonId,
+      double progressPercent,
+      Double lastPositionSec) {}
 }

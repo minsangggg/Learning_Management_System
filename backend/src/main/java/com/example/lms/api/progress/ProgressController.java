@@ -48,10 +48,18 @@ public class ProgressController {
     AuthUtil.requireLearner(ctx);
     validateRequest(request);
     enrollmentRepository.requireOwnedByUser(request.enrollmentId(), ctx.userId());
+    String status = enrollmentRepository.findStatusById(request.enrollmentId());
+    if (isPending(status)) {
+      throw new ApiException(ErrorCode.FORBIDDEN, "Enrollment pending approval");
+    }
     boolean completed = request.progressPercent() >= 100.0;
     long id =
         progressRepository.upsert(
-            request.enrollmentId(), request.lessonId(), request.progressPercent(), completed);
+            request.enrollmentId(),
+            request.lessonId(),
+            request.progressPercent(),
+            completed,
+            request.lastPositionSec());
     return toResponse(progressRepository.findById(id));
   }
 
@@ -61,7 +69,8 @@ public class ProgressController {
         entity.enrollmentId(),
         entity.lessonId(),
         entity.progressPercent(),
-        entity.completedAt() == null ? null : entity.completedAt().toString());
+        entity.completedAt() == null ? null : entity.completedAt().toString(),
+        entity.lastPositionSec());
   }
 
   private void validateRequest(ProgressUpdateRequest request) {
@@ -71,5 +80,12 @@ public class ProgressController {
     if (request.progressPercent() < 0 || request.progressPercent() > 100) {
       throw new ApiException(ErrorCode.VALIDATION_ERROR, "Progress percent must be 0-100");
     }
+    if (request.lastPositionSec() != null && request.lastPositionSec() < 0) {
+      throw new ApiException(ErrorCode.VALIDATION_ERROR, "Last position must be >= 0");
+    }
+  }
+
+  private boolean isPending(String status) {
+    return status != null && "PENDING".equalsIgnoreCase(status.trim());
   }
 }

@@ -120,7 +120,9 @@ public class LessonController {
         entity.title(),
         entity.content(),
         entity.orderNo(),
-        entity.videoUrl());
+        entity.videoUrl(),
+        entity.startSec(),
+        entity.endSec());
   }
 
   private WatchedLessonResponse toWatchedResponse(WatchedLessonRow row) {

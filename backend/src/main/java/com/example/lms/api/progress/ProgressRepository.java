@@ -23,17 +23,23 @@ public class ProgressRepository {
         new SimpleJdbcInsert(jdbcTemplate)
             .withTableName("PROGRESS")
             .usingGeneratedKeyColumns("ID")
-            .usingColumns("ENROLLMENT_ID", "LESSON_ID", "PROGRESS_PERCENT", "COMPLETED_AT");
+            .usingColumns(
+                "ENROLLMENT_ID", "LESSON_ID", "PROGRESS_PERCENT", "COMPLETED_AT", "LAST_POSITION_SEC");
   }
 
   public List<ProgressEntity> findByEnrollmentId(long enrollmentId) {
     return jdbcTemplate.query(
-        "SELECT ID, ENROLLMENT_ID, LESSON_ID, PROGRESS_PERCENT, COMPLETED_AT FROM PROGRESS WHERE ENROLLMENT_ID = ? ORDER BY ID",
+        "SELECT ID, ENROLLMENT_ID, LESSON_ID, PROGRESS_PERCENT, COMPLETED_AT, LAST_POSITION_SEC FROM PROGRESS WHERE ENROLLMENT_ID = ? ORDER BY ID",
         mapper(),
         enrollmentId);
   }
 
-  public long upsert(long enrollmentId, long lessonId, double progressPercent, boolean completed) {
+  public long upsert(
+      long enrollmentId,
+      long lessonId,
+      double progressPercent,
+      boolean completed,
+      Double lastPositionSec) {
     List<Long> ids =
         jdbcTemplate.query(
             "SELECT ID FROM PROGRESS WHERE ENROLLMENT_ID = ? AND LESSON_ID = ?",
@@ -46,15 +52,17 @@ public class ProgressRepository {
       params.put("LESSON_ID", lessonId);
       params.put("PROGRESS_PERCENT", progressPercent);
       params.put("COMPLETED_AT", completed ? java.sql.Timestamp.from(Instant.now()) : null);
+      params.put("LAST_POSITION_SEC", lastPositionSec);
       Number id = insert.executeAndReturnKey(params);
       return id.longValue();
     }
 
     long id = ids.get(0);
     jdbcTemplate.update(
-        "UPDATE PROGRESS SET PROGRESS_PERCENT = ?, COMPLETED_AT = ? WHERE ID = ?",
+        "UPDATE PROGRESS SET PROGRESS_PERCENT = ?, COMPLETED_AT = ?, LAST_POSITION_SEC = NVL(?, LAST_POSITION_SEC) WHERE ID = ?",
         progressPercent,
         completed ? java.sql.Timestamp.from(Instant.now()) : null,
+        lastPositionSec,
         id);
     return id;
   }
@@ -62,7 +70,7 @@ public class ProgressRepository {
   public ProgressEntity findById(long id) {
     List<ProgressEntity> rows =
         jdbcTemplate.query(
-            "SELECT ID, ENROLLMENT_ID, LESSON_ID, PROGRESS_PERCENT, COMPLETED_AT FROM PROGRESS WHERE ID = ?",
+            "SELECT ID, ENROLLMENT_ID, LESSON_ID, PROGRESS_PERCENT, COMPLETED_AT, LAST_POSITION_SEC FROM PROGRESS WHERE ID = ?",
             mapper(),
             id);
     if (rows.isEmpty()) {
@@ -80,9 +88,20 @@ public class ProgressRepository {
             rs.getDouble("PROGRESS_PERCENT"),
             rs.getTimestamp("COMPLETED_AT") == null
                 ? null
-                : rs.getTimestamp("COMPLETED_AT").toInstant());
+                : rs.getTimestamp("COMPLETED_AT").toInstant(),
+            getNullableDouble(rs, "LAST_POSITION_SEC"));
+  }
+
+  private Double getNullableDouble(ResultSet rs, String column) throws java.sql.SQLException {
+    double value = rs.getDouble(column);
+    return rs.wasNull() ? null : value;
   }
 }
 
 record ProgressEntity(
-    long id, long enrollmentId, long lessonId, double progressPercent, Instant completedAt) {}
+    long id,
+    long enrollmentId,
+    long lessonId,
+    double progressPercent,
+    Instant completedAt,
+    Double lastPositionSec) {}

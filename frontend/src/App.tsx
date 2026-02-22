@@ -13,6 +13,7 @@ import SignupPage from "./pages/Signup";
 import AdminCourses from "./pages/AdminCourses";
 import AdminCourseDetail from "./pages/AdminCourseDetail";
 import AdminReports from "./pages/AdminReports";
+import AdminMyPage from "./pages/AdminMyPage";
 import LoginModal from "./components/LoginModal";
 import { apiRequest } from "./api/client";
 import { clearAuth, getName, getUserId, Role, setAuth } from "./auth";
@@ -118,6 +119,14 @@ function AppLayout() {
           element={
             <RequireRole role="ADMIN">
               <AdminReports />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/admin/my-page"
+          element={
+            <RequireRole role="ADMIN">
+              <AdminMyPage />
             </RequireRole>
           }
         />

@@ -27,13 +27,13 @@ public class LessonRepository {
 
   public List<LessonEntity> findAll() {
     return jdbcTemplate.query(
-        "SELECT ID, COURSE_ID, TITLE, CONTENT, ORDER_NO, VIDEO_URL FROM LESSONS ORDER BY ID",
+        "SELECT ID, COURSE_ID, TITLE, CONTENT, ORDER_NO, VIDEO_URL, START_SEC, END_SEC FROM LESSONS ORDER BY ID",
         mapper());
   }
 
   public List<LessonEntity> findByCourseId(long courseId) {
     return jdbcTemplate.query(
-        "SELECT ID, COURSE_ID, TITLE, CONTENT, ORDER_NO, VIDEO_URL FROM LESSONS WHERE COURSE_ID = ? ORDER BY ORDER_NO",
+        "SELECT ID, COURSE_ID, TITLE, CONTENT, ORDER_NO, VIDEO_URL, START_SEC, END_SEC FROM LESSONS WHERE COURSE_ID = ? ORDER BY ORDER_NO",
         mapper(),
         courseId);
   }
@@ -41,7 +41,7 @@ public class LessonRepository {
   public LessonEntity findById(long id) {
     List<LessonEntity> rows =
         jdbcTemplate.query(
-            "SELECT ID, COURSE_ID, TITLE, CONTENT, ORDER_NO, VIDEO_URL FROM LESSONS WHERE ID = ?",
+            "SELECT ID, COURSE_ID, TITLE, CONTENT, ORDER_NO, VIDEO_URL, START_SEC, END_SEC FROM LESSONS WHERE ID = ?",
             mapper(),
             id);
     if (rows.isEmpty()) {
@@ -114,7 +114,9 @@ public class LessonRepository {
             rs.getString("TITLE"),
             rs.getString("CONTENT"),
             rs.getInt("ORDER_NO"),
-            rs.getString("VIDEO_URL"));
+            rs.getString("VIDEO_URL"),
+            getNullableInt(rs, "START_SEC"),
+            getNullableInt(rs, "END_SEC"));
   }
 
   private RowMapper<WatchedLessonRow> watchedMapper() {
@@ -136,6 +138,11 @@ public class LessonRepository {
             courseId);
     return count != null && count > 0;
   }
+
+  private Integer getNullableInt(ResultSet rs, String column) throws java.sql.SQLException {
+    int value = rs.getInt(column);
+    return rs.wasNull() ? null : value;
+  }
 }
 
 record LessonEntity(
@@ -144,7 +151,9 @@ record LessonEntity(
     String title,
     String content,
     int orderNo,
-    String videoUrl) {}
+    String videoUrl,
+    Integer startSec,
+    Integer endSec) {}
 
 record WatchedLessonRow(
     long lessonId,
